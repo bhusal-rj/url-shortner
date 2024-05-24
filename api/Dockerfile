@@ -1,8 +1,8 @@
-FROM golang:alpine as builder
+uROM golang:alpine as builder
 
 RUN mkdir /build
 
-ADD ./build/
+ADD . /build/
 
 WORKDIR /build
 
