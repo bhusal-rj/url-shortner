@@ -1,9 +1,15 @@
 package routes
 
 import (
-	"github.com/asaskevich/govalidator"
-	"github.com/gofiber/fiber/v2"
+	"os"
+	"strconv"
 	"time"
+
+	"github.com/asaskevich/govalidator"
+	"github.com/bhusal-rj/url-shortner/database"
+	"github.com/bhusal-rj/url-shortner/helpers"
+	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
 )
 
 // here json:url specifies how the struct should be serialized to and from a JSON field
@@ -32,6 +38,27 @@ func ShortenURL(c *fiber.Ctx) error {
 
 	// implement the rate limiting
 
+	r2 := database.CreateClient(1)
+	defer r2.Close()
+
+	val, err := r2.Get(database.Ctx, c.IP()).Result()
+	if err == redis.Nil {
+		//if the finding of key value is Nil that means that there is no record in the database
+		//so update the record in the database
+		_ = r2.Set(database.Ctx, c.IP(), os.Getenv("API_QUOTA"), 30*60*time.Second).Err()
+	} else {
+		valInt, _ := strconv.Atoi(val)
+
+		if valInt <= 0 {
+			//it returns the remaining time to live of a key that has a timeout
+			limit, _ := r2.TTL(database.Ctx, c.IP()).Result()
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"error":            "Rate limit exceeded",
+				"rate_limit_reset": limit / time.Nanosecond / time.Minute,
+			})
+		}
+	}
+
 	//check if the input is the acutal URL
 	if !govalidator.IsURL(body.URL) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid URL submitted"})
@@ -44,4 +71,7 @@ func ShortenURL(c *fiber.Ctx) error {
 	//enforce https
 
 	body.URL = helpers.EnforceHTTP(body.URL)
+	r2.Decr(database.Ctx, c.IP())
+
+	return nil
 }
