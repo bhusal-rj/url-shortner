@@ -1,12 +1,12 @@
 package routes
 
 import (
-	"github.com/bhusal-rj/url-shortner.git/database"
+	"github.com/bhusal-rj/url-shortner/database"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 )
 
-func resolveURL(c *fiber.Ctx) error {
+func ResolveURL(c *fiber.Ctx) error {
 	url := c.Params("url")
 
 	r := database.CreateClient(0)

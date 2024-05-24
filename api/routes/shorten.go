@@ -10,6 +10,7 @@ import (
 	"github.com/bhusal-rj/url-shortner/helpers"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 )
 
 // here json:url specifies how the struct should be serialized to and from a JSON field
@@ -24,7 +25,7 @@ type response struct {
 	CustomShort    string        `json:"short"`
 	Expiry         time.Duration `json:"expiry"`
 	XRateRemainig  int           `json:"rate_limit"`
-	XRateLimitRest time.Duration `json:"rate_limit_reset`
+	XRateLimitRest time.Duration `json:"rate_limit_reset"`
 }
 
 func ShortenURL(c *fiber.Ctx) error {
@@ -73,5 +74,53 @@ func ShortenURL(c *fiber.Ctx) error {
 	body.URL = helpers.EnforceHTTP(body.URL)
 	r2.Decr(database.Ctx, c.IP())
 
-	return nil
+	//check the user sent link is used by other or not
+	var id string
+
+	if body.CustomShort == "" {
+		id = uuid.New().String()[:6]
+
+	} else {
+		id = body.CustomShort
+	}
+
+	r := database.CreateClient(0)
+	val, _ = r.Get(database.Ctx, id).Result()
+	if val != "" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "URL is already in use",
+		})
+	}
+
+	defer r.Close()
+
+	error := r.Set(database.Ctx, id, body.URL, body.Expiry*3600*time.Second)
+
+	if error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal server error",
+		})
+	}
+
+	resp := response{
+		URL:            body.URL,
+		CustomShort:    "",
+		Expiry:         body.Expiry,
+		XRateRemainig:  10,
+		XRateLimitRest: 30,
+	}
+
+	r2.Decr(database.Ctx, c.IP()).Result()
+
+	val, _ = r2.Get(database.Ctx, c.IP()).Result()
+
+	resp.XRateRemainig, _ = strconv.Atoi(val)
+
+	ttl, _ := r2.TTL(database.Ctx, c.IP()).Result()
+
+	resp.XRateLimitRest = ttl / time.Nanosecond / time.Minute
+
+	resp.CustomShort = os.Getenv("Domain") + "/" + id
+
+	return c.Status(fiber.StatusOK).JSON(resp)
 }
