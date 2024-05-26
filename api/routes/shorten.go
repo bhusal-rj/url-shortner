@@ -69,7 +69,7 @@ func ShortenURL(c *fiber.Ctx) error {
 	if !helpers.RemoveDomainError(body.URL) {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "You donnot have access to this"})
 	}
-	//enforce https
+	//enforce http
 
 	body.URL = helpers.EnforceHTTP(body.URL)
 	r2.Decr(database.Ctx, c.IP())
